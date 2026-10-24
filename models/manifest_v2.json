@@ -1,0 +1,90 @@
+{
+  "trained_on": [
+    "2017/18",
+    "2018/19",
+    "2019/20",
+    "2020/21",
+    "2021/22",
+    "2022/23"
+  ],
+  "validated_on": [
+    "2023/24"
+  ],
+  "test_seasons_not_touched": [
+    "2024/25",
+    "2025/26"
+  ],
+  "random_seed": 424410,
+  "random_forest_n_iter": 30,
+  "random_forest_best_params": {
+    "max_depth": 15,
+    "max_features": "sqrt",
+    "min_samples_leaf": 36,
+    "min_samples_split": 22,
+    "n_estimators": 200
+  },
+  "xgboost_n_iter": 25,
+  "xgboost_best_params": {
+    "colsample_bytree": 0.62802,
+    "learning_rate": 0.038649,
+    "max_depth": 2,
+    "min_child_weight": 2,
+    "n_estimators": 300,
+    "reg_lambda": 2.507368,
+    "subsample": 0.654868
+  },
+  "xgboost_available": true,
+  "poisson_best_alpha": 1.333521432163324,
+  "logistic_regression_best_params": {
+    "C": 0.001,
+    "penalty": "l2"
+  },
+  "best_candidate_after_wide_search": "Random Forest (wide search)",
+  "calibration_adopted": false,
+  "calibration_log_loss_before": 0.6766748328238699,
+  "calibration_log_loss_after": 0.6950393448479649,
+  "comparison_table": [
+    {
+      "model": "Baseline C - market",
+      "log_loss": 0.6751450881195304,
+      "brier_score": 0.2411452945914381,
+      "n_matches": 2036
+    },
+    {
+      "model": "Random Forest (wide search)",
+      "log_loss": 0.6822844511051996,
+      "brier_score": 0.24462943997761752,
+      "n_matches": 2036
+    },
+    {
+      "model": "Logistic Regression (wide search)",
+      "log_loss": 0.6845452786449043,
+      "brier_score": 0.2455415856712496,
+      "n_matches": 2036
+    },
+    {
+      "model": "XGBoost (wide search)",
+      "log_loss": 0.6846869587898254,
+      "brier_score": 0.24581001698970795,
+      "n_matches": 2036
+    },
+    {
+      "model": "Poisson Regression (wide search)",
+      "log_loss": 0.6855612862303638,
+      "brier_score": 0.2462342400289463,
+      "n_matches": 2036
+    },
+    {
+      "model": "Baseline B - Poisson (rolling rate)",
+      "log_loss": 0.6913961371725822,
+      "brier_score": 0.24875606634973318,
+      "n_matches": 2035
+    },
+    {
+      "model": "Baseline A - league rate",
+      "log_loss": 0.696646763920811,
+      "brier_score": 0.25174244596162315,
+      "n_matches": 2036
+    }
+  ]
+}
