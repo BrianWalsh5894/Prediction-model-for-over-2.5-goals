@@ -1,0 +1,5 @@
+model,log_loss,brier_score,n_matches
+Baseline C - market (de-margined avg odds),0.6751450881195304,0.2411452945914381,2036
+Baseline B - Poisson goals model,0.6913961371725822,0.24875606634973318,2035
+Logistic Regression (engineered features),0.6914218131764528,0.2482810496425329,2036
+Baseline A - league historical rate,0.696646763920811,0.25174244596162315,2036
