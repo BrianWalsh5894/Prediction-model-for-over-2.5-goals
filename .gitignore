@@ -9,3 +9,4 @@ __pycache__/
 .env
 *.db
 data/live/*
+reports/live_tracking.xlsx
