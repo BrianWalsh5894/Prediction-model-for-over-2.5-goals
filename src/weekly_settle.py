@@ -241,6 +241,17 @@ def main():
             print("\nNo settled bets yet.")
         print(f"\nWrote {report_md}")
 
+    # Ongoing results spreadsheet (reports/live_tracking.xlsx)
+    try:
+        import export_tracking_xlsx
+        path, nb, npred = export_tracking_xlsx.build()
+        print(f"Wrote {path} ({nb} bets, {npred} predictions)")
+    except ImportError:
+        print("Spreadsheet not updated: openpyxl missing - run  pip install openpyxl")
+    except PermissionError:
+        print("Spreadsheet not updated: live_tracking.xlsx is open in Excel - close it and run "
+              "python export_tracking_xlsx.py")
+
 
 if __name__ == "__main__":
     main()
