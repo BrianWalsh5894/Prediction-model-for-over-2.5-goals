@@ -1,6 +1,6 @@
 """
-Phase 11 - weekly step 1: predict upcoming League One / League Two fixtures
-with the frozen model v3.
+Phase 11 - weekly step 1: predict upcoming fixtures for one league group
+(default 'lower' = League One / League Two) with that group's frozen model.
 
 What it does, in order:
   1. Downloads the latest 2026/27 results into the database
@@ -17,8 +17,10 @@ What it does, in order:
      Over/Under 2.5 prices, then run weekly_bets.py on it.
 
 Run from inside src/:
-    python weekly_predict.py
+    python weekly_predict.py                     (default group: lower = League One + Two)
+    python weekly_predict.py --group lower
     python weekly_predict.py --fixtures-file path\\to\\fixtures.csv   (if the download fails)
+League groups and their live models are set in config/config.py (LEAGUE_GROUPS).
 """
 
 import os
@@ -30,9 +32,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config")))
 import config  # noqa: E402
-import model_v3 as mv  # noqa: E402
+import league_groups  # noqa: E402
 import live_db  # noqa: E402
-from build_features import build_feature_table  # noqa: E402
 from import_helpers import DIVISIONS, build_match_id  # noqa: E402
 
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
@@ -61,7 +62,7 @@ def refresh_results():
             sys.exit(1)
 
 
-def load_fixtures(path, conn, today):
+def load_fixtures(path, conn, today, leagues):
     if path:
         raw = pd.read_csv(path, encoding="utf-8-sig")
     else:
@@ -71,7 +72,7 @@ def load_fixtures(path, conn, today):
         except Exception:
             raw = pd.read_csv(FIXTURES_URL, encoding="latin-1")
     raw.columns = [c.strip() for c in raw.columns]
-    live_divs = [LEAGUE_TO_DIV[lg] for lg in config.LIVE_LEAGUES]
+    live_divs = [LEAGUE_TO_DIV[lg] for lg in leagues]
     raw = raw[raw["Div"].isin(live_divs)].dropna(subset=["Date", "HomeTeam", "AwayTeam"])
 
     name_map = dict(conn.execute("SELECT raw_name, standard_name FROM team_name_map").fetchall())
@@ -91,28 +92,71 @@ def load_fixtures(path, conn, today):
     return pd.DataFrame(rows)
 
 
+def _opt(row, name):
+    """Optional model component (not every model has a Poisson/DC split)."""
+    v = getattr(row, name, None)
+    return None if v is None or pd.isna(v) else float(v)
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--group", default="lower",
+                    help="league group from config.LEAGUE_GROUPS (default: lower = League One + Two)")
     ap.add_argument("--fixtures-file", help="use a local fixtures CSV instead of downloading")
     ap.add_argument("--skip-refresh", action="store_true",
                     help="don't download results / re-run clean_data (testing only)")
     ap.add_argument("--today", help="pretend today is YYYY-MM-DD (testing only)")
+    ap.add_argument("--force", action="store_true",
+                    help="predict even if last Saturday's results aren't in (only if there were no games)")
     args = ap.parse_args()
 
     today = date.fromisoformat(args.today) if args.today else date.today()
     if not args.skip_refresh:
         refresh_results()
 
+    leagues = league_groups.group(args.group)["leagues"]
+    mv = league_groups.live_model(args.group)
+    print(f"Group '{args.group}': {', '.join(leagues)} - live model {mv.MODEL_VERSION}")
     conn = live_db.connect()
     bundle = mv.load_bundle()
 
-    fixtures = load_fixtures(args.fixtures_file, conn, today)
+    fixtures = load_fixtures(args.fixtures_file, conn, today, leagues)
     clean = pd.read_csv(CLEAN_CSV, parse_dates=["match_date"])
+
+    # Guard: the most recent Saturday's results must already be in the
+    # database, otherwise a team's prediction would miss its last match.
+    # (Football-Data usually publishes weekend results Sunday night /
+    # Monday.) --force skips this, e.g. for a weekend with no games.
+    last_sat = pd.Timestamp(today) - pd.Timedelta(days=(today.weekday() - 5) % 7 or 7)
+    live = clean[clean["league_name"].isin(leagues) & (clean["season"] == CURRENT_SEASON)]
+    latest = live["match_date"].max()
+    if not args.force and (pd.isna(latest) or latest < last_sat):
+        print(f"\nSTOP: latest {' / '.join(leagues)} result in the database is "
+              f"{latest:%Y-%m-%d}, but there should be results from Saturday {last_sat:%Y-%m-%d}. "
+              f"Football-Data hasn't published them yet - try again later (usually Sunday night or "
+              f"Monday). If there were genuinely no games that Saturday, add --force.")
+        sys.exit(1)
     if len(fixtures):
         fixtures = fixtures[~fixtures["match_id"].isin(clean["match_id"])]   # already played
     if fixtures.empty:
-        print(f"\nNo upcoming {' / '.join(config.LIVE_LEAGUES)} fixtures found from {today}.")
+        print(f"\nNo upcoming {' / '.join(leagues)} fixtures found from {today}.")
         return
+
+    # Midweek safety net: a team with an earlier predicted fixture whose
+    # result still isn't in the database is held back until it is.
+    awaiting = pd.read_sql_query(
+        """SELECT match_id, home_team, away_team FROM live_fixtures
+           WHERE status = 'scheduled' AND match_date < ? AND match_date >= ?""",
+        conn, params=(today.isoformat(), (today - pd.Timedelta(days=7)).isoformat()))
+    awaiting = awaiting[~awaiting["match_id"].isin(clean["match_id"])]
+    waiting_teams = set(awaiting["home_team"]) | set(awaiting["away_team"])
+    blocked = fixtures["home_team"].isin(waiting_teams) | fixtures["away_team"].isin(waiting_teams)
+    if blocked.any():
+        print(f"\n{int(blocked.sum())} fixture(s) held back - a team's previous result isn't published yet: "
+              f"{sorted(waiting_teams & (set(fixtures['home_team']) | set(fixtures['away_team'])))}")
+        fixtures = fixtures[~blocked]
+        if fixtures.empty:
+            return
 
     # Only each team's NEXT match. A later fixture would be predicted without
     # the result of the match before it (and the first prediction is the one
@@ -135,10 +179,10 @@ def main():
     # Features: append fixtures (no result) to the played matches and build
     # the full table - every feature is shifted, so fixtures only see the past.
     fx_rows = fixtures.drop(columns=["kickoff_time"]).assign(behind_closed_doors=0)
-    feats = build_feature_table(pd.concat([clean, fx_rows], ignore_index=True))
+    feats = mv.prepare_features(pd.concat([clean, fx_rows], ignore_index=True))
     fx_feats = feats[feats["match_id"].isin(fixtures["match_id"])].reset_index(drop=True)
 
-    preds = mv.predict_v3(bundle, fx_feats, clean, today)
+    preds = mv.predict(bundle, fx_feats, clean, today)
     preds = preds.merge(fixtures[["match_id", "kickoff_time"]], on="match_id")
     preds = preds.sort_values(["match_date", "league_name", "home_team"]).reset_index(drop=True)
 
@@ -155,8 +199,9 @@ def main():
                               (match_id, model_version, predicted_prob_over_2_5, prediction_date,
                                p_poisson, p_dc, lam_home, lam_away)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                           (r.match_id, mv.MODEL_VERSION, float(r.p_over), now, float(r.p_poisson),
-                            float(r.p_dc), float(r.poisson_lam_home), float(r.poisson_lam_away)))
+                           (r.match_id, mv.MODEL_VERSION, float(r.p_over), now,
+                            _opt(r, "p_poisson"), _opt(r, "p_dc"),
+                            _opt(r, "poisson_lam_home"), _opt(r, "poisson_lam_away")))
         new += cur.rowcount
         kept += 1 - cur.rowcount
     conn.commit()
@@ -184,9 +229,9 @@ def main():
         "checked_at": "",
     })
     os.makedirs(live_db.LIVE_DIR, exist_ok=True)
-    out = os.path.join(live_db.LIVE_DIR, f"odds_entry_{today.isoformat()}.csv")
+    out = os.path.join(live_db.LIVE_DIR, f"odds_entry_{args.group}_{today.isoformat()}.csv")
     if os.path.exists(out):
-        out = os.path.join(live_db.LIVE_DIR, f"odds_entry_{today.isoformat()}_{datetime.now():%H%M%S}.csv")
+        out = os.path.join(live_db.LIVE_DIR, f"odds_entry_{args.group}_{today.isoformat()}_{datetime.now():%H%M%S}.csv")
     sheet.to_csv(out, index=False)
 
     pd.set_option("display.width", 200)

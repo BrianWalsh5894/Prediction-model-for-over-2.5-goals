@@ -14,7 +14,7 @@ of the frozen model v3.
          same matches
        - bets: P/L, ROI with a 95% bootstrap interval, closing-line value
          (did you get better odds than the close?)
-     Written to reports/live_tracking.md and printed.
+     Written to reports/live_tracking_<group>.md (one per live league group) and printed.
 
 Run from inside src/ (after the weekend's matches):
     python weekly_settle.py
@@ -29,10 +29,10 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config")))
 import config  # noqa: E402
-import model_v3 as mv  # noqa: E402
+import league_groups  # noqa: E402
 import live_db  # noqa: E402
 
-REPORT_MD = os.path.join("..", "reports", "live_tracking.md")
+REPORT_DIR = os.path.join("..", "reports")
 VOID_AFTER_DAYS = 7
 MIN_BETS_FOR_CI = 30
 SEED = 424410
@@ -96,10 +96,12 @@ def settle(conn, today):
     return played, voided, n_settled
 
 
-def build_report(conn):
+def build_report(conn, group_name):
     rng = np.random.default_rng(SEED)
-    lines = [f"# Live paper-tracking - model {mv.MODEL_VERSION}\n",
-             f"Updated {datetime.now():%Y-%m-%d %H:%M}. Leagues: {', '.join(config.LIVE_LEAGUES)}. "
+    grp = league_groups.group(group_name)
+    leagues, version = grp["leagues"], grp["live_model"]
+    lines = [f"# Live paper-tracking - group '{group_name}', model {version}\n",
+             f"Updated {datetime.now():%Y-%m-%d %H:%M}. Leagues: {', '.join(leagues)}. "
              f"Flat {config.PAPER_STAKE:g}-unit paper stakes, {config.COMMISSION_RATE:.0%} commission, "
              f"min EV {config.MIN_EDGE:.0%}. Model frozen - never changed during tracking.\n"]
 
@@ -113,7 +115,8 @@ def build_report(conn):
         LEFT JOIN live_prices lp ON lp.match_id = p.match_id
         LEFT JOIN odds o ON o.match_id = p.match_id
         WHERE p.model_version = ?
-    """, conn, params=(mv.MODEL_VERSION,))
+    """, conn, params=(version,))
+    preds = preds[preds["league_name"].isin(leagues)]
     done = preds[(preds["status"] == "played") & preds["over_2_5"].notna()].copy()
     counts = preds["status"].value_counts().to_dict()
     lines.append(f"Predictions: {len(preds)} total - {counts.get('played', 0)} played, "
@@ -121,7 +124,7 @@ def build_report(conn):
 
     # --- Probability quality vs the market -----------------------------------
     rows = []
-    for label, sub in [("All leagues", done)] + [(lg, done[done["league_name"] == lg]) for lg in config.LIVE_LEAGUES]:
+    for label, sub in [("All leagues", done)] + [(lg, done[done["league_name"] == lg]) for lg in leagues]:
         y = sub["over_2_5"].values.astype(float)
         row = {"league": label, "played": len(sub),
                "model_log_loss": round(mean_ll(y, sub["p_model"]), 4) if len(sub) else None}
@@ -147,6 +150,7 @@ def build_report(conn):
         JOIN live_fixtures f ON f.match_id = b.match_id
         LEFT JOIN odds o ON o.match_id = b.match_id
     """, conn)
+    bets = bets[bets["league_name"].isin(leagues)]
     settled = bets[bets["result"].isin(["win", "loss"])].copy()
     lines.append("\n## Paper bets\n")
     if settled.empty:
@@ -200,9 +204,10 @@ def build_report(conn):
 
     lines.append("\n**Rule:** no real money unless the model beats Betfair's closing price on log loss AND the "
                  "bets show positive ROI with the whole 95% interval above zero, over 200+ settled bets.\n")
-    with open(REPORT_MD, "w", encoding="utf-8") as f:
+    report_md = os.path.join(REPORT_DIR, f"live_tracking_{group_name}.md")
+    with open(report_md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    return quality, summary
+    return quality, summary, report_md
 
 
 def main():
@@ -221,17 +226,20 @@ def main():
     played, voided, n_settled = settle(conn, today)
     print(f"\nFixtures newly played: {played}, newly void: {voided}. Bets settled now: {n_settled}.")
 
-    quality, summary = build_report(conn)
     pd.set_option("display.width", 200)
-    print("\nProbability quality (lower log loss = better):")
-    print(quality.to_string(index=False))
-    if summary:
-        print("\nPaper bets:")
-        for k, v in summary.items():
-            print(f"  {k}: {v}")
-    else:
-        print("\nNo settled bets yet.")
-    print(f"\nWrote {REPORT_MD}")
+    for group_name in league_groups.live_groups():
+        quality, summary, report_md = build_report(conn, group_name)
+        grp = league_groups.group(group_name)
+        print(f"\n===== Group '{group_name}' ({', '.join(grp['leagues'])}), model {grp['live_model']} =====")
+        print("Probability quality (lower log loss = better):")
+        print(quality.to_string(index=False))
+        if summary:
+            print("\nPaper bets:")
+            for k, v in summary.items():
+                print(f"  {k}: {v}")
+        else:
+            print("\nNo settled bets yet.")
+        print(f"\nWrote {report_md}")
 
 
 if __name__ == "__main__":

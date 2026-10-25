@@ -23,5 +23,23 @@ ELO_INITIAL = 1500                   # starting Elo rating for a team with no hi
 ELO_K = 20                           # Elo K-factor (how much one result moves a rating)
 ELO_HOME_ADVANTAGE = 65              # Elo points added to the home team's rating before computing expected score
 # Live paper-tracking (Phase 11)
-LIVE_LEAGUES = ["League One", "League Two"]   # leagues model v3 is tracked on
 PAPER_STAKE = 1.0                             # flat stake per paper bet, in units
+
+# League groups (step 3). Each group has its own feature set and its own
+# frozen model, trained and tracked separately. live_model = the frozen
+# model version tracked live for that group (None = still in R&D, no live
+# predictions). A group's live model must never change while it is tracked -
+# a new model gets a new version and starts a new track record.
+LEAGUE_GROUPS = {
+    "lower": {
+        "leagues": ["League One", "League Two"],
+        "features": "base",               # the 103 Phase 5 features
+        "live_model": "v3",
+    },
+    "upper": {
+        "leagues": ["Premier League", "Championship"],
+        "features": "base+xg",            # step 4 R&D - not live yet
+        "live_model": None,
+    },
+}
+LIVE_LEAGUES = LEAGUE_GROUPS["lower"]["leagues"]   # kept: recorded in manifest_v3.json

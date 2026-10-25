@@ -28,7 +28,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config")))
 import config  # noqa: E402
-import model_v3 as mv  # noqa: E402
+import league_groups  # noqa: E402
 import live_db  # noqa: E402
 
 
@@ -83,7 +83,7 @@ def main():
             problems.append(f"{r.home} v {r.away}: checked_at missing or unreadable ('{r.checked_at}') "
                             f"- use e.g. 2026-10-31 14:05")
             continue
-        fixture = conn.execute("SELECT match_date FROM live_fixtures WHERE match_id = ?",
+        fixture = conn.execute("SELECT match_date, league_name FROM live_fixtures WHERE match_id = ?",
                                (r.match_id,)).fetchone()
         if fixture is None:
             problems.append(f"{r.home} v {r.away}: unknown match_id (run weekly_predict.py first)")
@@ -93,9 +93,11 @@ def main():
             problems.append(f"{r.home} v {r.away}: checked_at {checked} is after the match date - not allowed")
             continue
 
+        grp = league_groups.group_of_league(fixture[1])
+        version = league_groups.group(grp)["live_model"] if grp else None
         row = conn.execute("""SELECT prediction_id, predicted_prob_over_2_5 FROM predictions
                               WHERE match_id = ? AND model_version = ?""",
-                           (r.match_id, mv.MODEL_VERSION)).fetchone()
+                           (r.match_id, version)).fetchone()
         if row is None:
             problems.append(f"{r.home} v {r.away}: no stored prediction (run weekly_predict.py first)")
             continue

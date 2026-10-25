@@ -228,3 +228,18 @@ def predict_v3(bundle, fixture_features, completed_matches, asof):
     out["p_dc"] = p_dc
     out["p_over"] = BLEND_WEIGHT_POISSON * p_pois + (1 - BLEND_WEIGHT_POISSON) * p_dc
     return out
+
+
+# ---------------------------------------------------------------------------
+# Standard interface used by the live pipeline (league_groups.py)
+# ---------------------------------------------------------------------------
+
+def prepare_features(rows):
+    """Feature table for played matches + upcoming fixtures (v3 = the 103
+    Phase 5 features, unchanged)."""
+    from build_features import build_feature_table
+    return build_feature_table(rows)
+
+
+def predict(bundle, fixture_features, completed_matches, asof):
+    return predict_v3(bundle, fixture_features, completed_matches, asof)
