@@ -22,3 +22,6 @@ MIN_GAMES_CAREER_FOR_TRAINING = 3    # matches where either team has fewer caree
 ELO_INITIAL = 1500                   # starting Elo rating for a team with no history
 ELO_K = 20                           # Elo K-factor (how much one result moves a rating)
 ELO_HOME_ADVANTAGE = 65              # Elo points added to the home team's rating before computing expected score
+# Live paper-tracking (Phase 11)
+LIVE_LEAGUES = ["League One", "League Two"]   # leagues model v3 is tracked on
+PAPER_STAKE = 1.0                             # flat stake per paper bet, in units

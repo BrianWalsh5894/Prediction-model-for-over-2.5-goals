@@ -63,6 +63,11 @@ def compute_elo(df):
         home_pre.append(r_home)
         away_pre.append(r_away)
 
+        # Upcoming fixture (no result yet, Phase 11): it gets a pre-match
+        # rating like any match, but must not update anyone's rating.
+        if pd.isna(row.result):
+            continue
+
         exp_home = 1.0 / (1.0 + 10 ** (-((r_home + ELO_HOME_ADVANTAGE) - r_away) / 400.0))
         if row.result == "H":
             score_home = 1.0
@@ -117,12 +122,28 @@ def build_long_format(df):
         "points": np.where(df["result"] == "A", 3, np.where(df["result"] == "D", 1, 0)),
     })
     long = pd.concat([home, away], ignore_index=True)
+    # Upcoming fixtures (Phase 11) have no result: points must be missing,
+    # not 0, so a team's NEXT fixture doesn't count this one as a defeat.
+    long.loc[long["goals_for"].isna(), "points"] = np.nan
     long = long.sort_values(["team", "match_date", "match_id"]).reset_index(drop=True)
     return long
 
 
 def main():
-    df = load_clean()
+    final = build_feature_table(load_clean())
+    os.makedirs(os.path.dirname(FEATURES_CSV), exist_ok=True)
+    final.to_csv(FEATURES_CSV, index=False)
+    print(f"Wrote {len(final)} rows, {len(final.columns)} columns to {FEATURES_CSV}")
+    print(f"Matches eligible for training (both teams >= {MIN_GAMES_CAREER_FOR_TRAINING} career games): "
+          f"{final['eligible_for_training'].sum()} / {len(final)}")
+
+
+def build_feature_table(df):
+    """Builds the feature table from a matches_clean-style DataFrame.
+    Phase 11 also calls this with upcoming fixtures appended (goals,
+    result and stats all missing): every feature is shifted, so a
+    fixture's row only ever uses matches played before it."""
+    df = df.sort_values(["match_date", "match_id"]).reset_index(drop=True)
     df = compute_elo(df)
 
     long = build_long_format(df)
@@ -309,12 +330,7 @@ def main():
 
     final = final.reset_index()
     final = final.sort_values(["match_date", "match_id"]).reset_index(drop=True)
-
-    os.makedirs(os.path.dirname(FEATURES_CSV), exist_ok=True)
-    final.to_csv(FEATURES_CSV, index=False)
-    print(f"Wrote {len(final)} rows, {len(final.columns)} columns to {FEATURES_CSV}")
-    print(f"Matches eligible for training (both teams >= {MIN_GAMES_CAREER_FOR_TRAINING} career games): "
-          f"{final['eligible_for_training'].sum()} / {len(final)}")
+    return final
 
 
 if __name__ == "__main__":
