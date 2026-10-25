@@ -1,5 +1,6 @@
 """
-Step 4 - download Premier League xG from Understat and link it to our matches.
+Download match xG from Understat and link it to our matches: the Premier
+League (step 4) and La Liga, Serie A, Bundesliga, Ligue 1 (v3-eu-upper).
 
 Understat (understat.com) publishes match-level expected goals (its own
 xG model) for the Premier League from 2014/15. We take 2017/18 - 2026/27
@@ -21,7 +22,8 @@ existing rows are replaced with the latest values.
 
 Run from inside src/ (about a minute - one request per season, with a
 pause between requests to be polite to their server):
-    python download_understat.py
+    python download_understat.py                       (all five leagues)
+    python download_understat.py --league "La Liga"    (just one)
     python download_understat.py --offline    (re-link from saved raw files, no download)
 """
 
@@ -42,29 +44,36 @@ UNDERSTAT = "https://understat.com"
 HEADERS = {"X-Requested-With": "XMLHttpRequest",
            "User-Agent": "Mozilla/5.0 (over25 student project)"}
 SEASONS = {f"20{y:02d}/{y + 1:02d}": 2000 + y for y in range(17, 27)}   # '2017/18' -> 2017
-LEAGUE = "Premier League"
+# our league name -> (Understat slug, our clean file)
+LEAGUES = {
+    "Premier League": ("EPL", CLEAN_CSV),
+    "La Liga": ("La_liga", os.path.join("..", "data", "clean", "matches_clean_eu_upper.csv")),
+    "Serie A": ("Serie_A", os.path.join("..", "data", "clean", "matches_clean_eu_upper.csv")),
+    "Bundesliga": ("Bundesliga", os.path.join("..", "data", "clean", "matches_clean_eu_upper.csv")),
+    "Ligue 1": ("Ligue_1", os.path.join("..", "data", "clean", "matches_clean_eu_upper.csv")),
+}
 
 
-def download(seasons):
+def download(seasons, slug):
     os.makedirs(RAW_DIR, exist_ok=True)
     s = requests.Session()
     s.get(UNDERSTAT, headers={"User-Agent": HEADERS["User-Agent"]}, timeout=30)   # sets cookies
     for season, year in seasons.items():
-        url = f"{UNDERSTAT}/getLeagueData/EPL/{year}"
+        url = f"{UNDERSTAT}/getLeagueData/{slug}/{year}"
         r = s.get(url, headers=HEADERS, timeout=30)
         r.raise_for_status()
         data = r.json()
-        with open(os.path.join(RAW_DIR, f"EPL_{year}.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(RAW_DIR, f"{slug}_{year}.json"), "w", encoding="utf-8") as f:
             json.dump(data, f)
         n_done = sum(1 for m in data["dates"] if m.get("isResult"))
         print(f"  {season}: {len(data['dates'])} fixtures, {n_done} played")
         time.sleep(1.5)
 
 
-def load_raw(seasons):
+def load_raw(seasons, slug):
     rows = []
     for season, year in seasons.items():
-        path = os.path.join(RAW_DIR, f"EPL_{year}.json")
+        path = os.path.join(RAW_DIR, f"{slug}_{year}.json")
         if not os.path.exists(path):
             print(f"  missing {path} - skipped")
             continue
@@ -105,20 +114,22 @@ def build_team_map(u, ours):
     return mapping, report
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--offline", action="store_true", help="don't download; use saved raw files")
-    args = ap.parse_args()
+def process(league, offline):
+    slug, clean_csv = LEAGUES[league]
+    print(f"\n==================== {league} ({slug}) ====================")
+    if not offline:
+        print(f"Downloading {league} xG from Understat...")
+        download(SEASONS, slug)
 
-    if not args.offline:
-        print("Downloading Premier League xG from Understat...")
-        download(SEASONS)
-
-    u = load_raw(SEASONS)
+    u = load_raw(SEASONS, slug)
     if u.empty:
-        sys.exit("No Understat data found.")
-    ours = pd.read_csv(CLEAN_CSV, parse_dates=["match_date"])
-    ours = ours[ours["league_name"] == LEAGUE]
+        print("No Understat data found - skipped.")
+        return
+    if not os.path.exists(clean_csv):
+        print(f"{clean_csv} not found - run clean_data.py first. Skipped.")
+        return
+    ours = pd.read_csv(clean_csv, parse_dates=["match_date"])
+    ours = ours[ours["league_name"] == league]
 
     mapping, report = build_team_map(u, ours)
     print("\nTeam name mapping (Understat -> ours, votes agreeing / total):")
@@ -147,7 +158,7 @@ def main():
     date_bad = has & (date_gap > 3)
     ok = has & ~score_bad & ~date_bad
 
-    print(f"\nOur PL matches: {len(linked)}   linked: {int(ok.sum())}   "
+    print(f"\nOur {league} matches: {len(linked)}   linked: {int(ok.sum())}   "
           f"no Understat match: {int((~has).sum())}   score mismatch: {int(score_bad.sum())}   "
           f"date >3 days apart: {int(date_bad.sum())}")
     print(linked.assign(linked=ok).groupby("season")["linked"].agg(["sum", "size"])
@@ -177,6 +188,16 @@ def main():
     print(f"\nWrote {len(out)} rows to match_xg ({total} in table).")
     if shaky or unmapped or (~ok).sum() > 5:
         print("Some names/matches need a look - paste this output to check before running R&D.")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--offline", action="store_true", help="don't download; use saved raw files")
+    ap.add_argument("--league", default="all", choices=["all"] + list(LEAGUES),
+                    help="one league, or all (default)")
+    args = ap.parse_args()
+    for league in (LEAGUES if args.league == "all" else [args.league]):
+        process(league, args.offline)
 
 
 if __name__ == "__main__":

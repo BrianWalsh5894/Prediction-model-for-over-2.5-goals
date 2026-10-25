@@ -25,13 +25,28 @@ import csv
 
 DB_PATH = os.path.join("..", "data", "over25.db")
 CLEAN_DIR = os.path.join("..", "data", "clean")
-CLEAN_CSV = os.path.join(CLEAN_DIR, "matches_clean.csv")
+CLEAN_CSV = os.path.join(CLEAN_DIR, "matches_clean.csv")              # England only - what model v3 uses
+CLEAN_EU_UPPER_CSV = os.path.join(CLEAN_DIR, "matches_clean_eu_upper.csv")   # La Liga, Serie A, Bundesliga, Ligue 1
+
+ENGLISH_LEAGUES = ["Premier League", "Championship", "League One", "League Two"]
+EU_UPPER_LEAGUES = ["La Liga", "Serie A", "Bundesliga", "Ligue 1"]
+# Second divisions: history only (promoted teams), exported with the EU file.
+# Their match counts vary with league size changes, so they're reported, not enforced.
+EU_SECOND_LEAGUES = ["La Liga 2", "Serie B", "2. Bundesliga", "Ligue 2"]
 
 EXPECTED_MATCHES = {
     "Premier League": 380,
     "Championship": 552,
     "League One": 552,
     "League Two": 552,
+    "La Liga": 380,
+    "Serie A": 380,
+    "Bundesliga": 306,
+    "Ligue 1": 380,
+}
+# Leagues whose size changed: (league, season) -> expected matches
+EXPECTED_BY_SEASON = {
+    ("Ligue 1", s): 306 for s in ("2023/24", "2024/25", "2025/26", "2026/27")   # cut to 18 teams from 2023/24
 }
 
 # Seasons known to legitimately deviate from the expected match count.
@@ -39,6 +54,7 @@ EXPECTED_MATCHES = {
 KNOWN_SHORT_SEASONS = {
     ("League One", "2019/20"): "curtailed by COVID, season ended early on points-per-game",
     ("League Two", "2019/20"): "curtailed by COVID, season ended early on points-per-game",
+    ("Ligue 1", "2019/20"): "curtailed by COVID, season ended early on points-per-game",
 }
 
 # The current, in-progress season (Phase 9's "LIVE" season) is always
@@ -72,12 +88,17 @@ def main():
         print("OK: all match_date values are ISO YYYY-MM-DD")
 
     # --- 2. Standardise league and team names ---------------------------
-    cur.execute("SELECT COUNT(*) FROM leagues")
-    n_leagues = cur.fetchone()[0]
-    if n_leagues != 4:
-        ok = fail(f"expected 4 leagues, found {n_leagues}")
+    cur.execute("SELECT league_name FROM leagues")
+    present = {r[0] for r in cur.fetchall()}
+    missing = [lg for lg in ENGLISH_LEAGUES if lg not in present]
+    unknown = sorted(present - set(ENGLISH_LEAGUES) - set(EU_UPPER_LEAGUES) - set(EU_SECOND_LEAGUES))
+    if missing or unknown:
+        ok = fail(f"leagues table: missing {missing}, unexpected {unknown}")
     else:
-        print("OK: 4 leagues present")
+        eu = [lg for lg in EU_UPPER_LEAGUES if lg in present]
+        eu2 = [lg for lg in EU_SECOND_LEAGUES if lg in present]
+        print(f"OK: 4 English leagues present" + (f" + {len(eu)} European ({', '.join(eu)})" if eu else "")
+              + (f" + {len(eu2)} European second divisions" if eu2 else ""))
 
     cur.execute("SELECT team_name, COUNT(*) FROM teams GROUP BY team_name HAVING COUNT(*) > 1")
     dup_team_names = cur.fetchall()
@@ -103,13 +124,29 @@ def main():
         print("OK: every team_name_map standard_name exists in teams")
 
     # --- 3. Missing/incorrect values; verify scores ---------------------
+    # Second divisions are history only: a match with no score there (abandoned /
+    # awarded, e.g. Bastia v Red Star 2025/26) is left out of the export and
+    # reported, instead of failing the checks and blocking the English pipeline.
+    second_ph = ",".join("?" * len(EU_SECOND_LEAGUES))
+    cur.execute(f"""
+        SELECT m.match_id FROM matches m JOIN leagues l ON m.league_id = l.league_id
+        WHERE l.league_name IN ({second_ph}) AND (m.home_goals IS NULL OR m.away_goals IS NULL)
+    """, EU_SECOND_LEAGUES)
+    second_no_score = [r[0] for r in cur.fetchall()]
+    nulls_ok = True
     for col in ("home_goals", "away_goals", "total_goals", "over_2_5", "result", "match_date"):
-        cur.execute(f"SELECT COUNT(*) FROM matches WHERE {col} IS NULL")
+        cur.execute(f"""
+            SELECT COUNT(*) FROM matches m JOIN leagues l ON m.league_id = l.league_id
+            WHERE m.{col} IS NULL AND l.league_name NOT IN ({second_ph})
+        """, EU_SECOND_LEAGUES)
         n_null = cur.fetchone()[0]
         if n_null:
-            ok = fail(f"{n_null} matches have NULL {col} (core field, should never be missing)")
-    if ok:
+            ok = nulls_ok = fail(f"{n_null} matches have NULL {col} (core field, should never be missing)")
+    if nulls_ok:
         print("OK: no NULLs in core match fields (goals, target, result, date)")
+    if second_no_score:
+        print(f"NOTE: {len(second_no_score)} second-division match(es) with no score left out of the export: "
+              f"{second_no_score}")
 
     cur.execute("""
         SELECT COUNT(*) FROM matches
@@ -132,8 +169,12 @@ def main():
         ORDER BY l.league_name, m.season
     """)
     unexplained = []
+    second_counts = []
     for league_name, season, count in cur.fetchall():
-        expected = EXPECTED_MATCHES[league_name]
+        if league_name in EU_SECOND_LEAGUES:
+            second_counts.append(f"{league_name} {season}: {count}")
+            continue
+        expected = EXPECTED_BY_SEASON.get((league_name, season), EXPECTED_MATCHES[league_name])
         if count == expected:
             continue
         if season == LIVE_SEASON:
@@ -145,7 +186,9 @@ def main():
     if unexplained:
         ok = fail(f"unexplained match-count deviations (not current season, not known short season): {unexplained}")
     else:
-        print("OK: all match-count deviations are either the in-progress 2026/27 season or the documented 2019/20 League One/Two curtailment")
+        print("OK: all match-count deviations are either the in-progress 2026/27 season or a documented COVID curtailment (2019/20)")
+    if second_counts:
+        print(f"NOTE (not checked): second-division match counts - {'; '.join(second_counts)}")
 
     # --- 4. Duplicates ----------------------------------------------------
     cur.execute("SELECT match_id, COUNT(*) FROM matches GROUP BY match_id HAVING COUNT(*) > 1")
@@ -232,12 +275,16 @@ def main():
     rows = cur.fetchall()
     columns = [d[0] for d in cur.description]
 
-    with open(CLEAN_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(columns)
-        writer.writerows(rows)
-
-    print(f"\nExported {len(rows)} rows to {CLEAN_CSV}")
+    league_idx = columns.index("league_name")
+    for path, leagues in [(CLEAN_CSV, ENGLISH_LEAGUES), (CLEAN_EU_UPPER_CSV, EU_UPPER_LEAGUES + EU_SECOND_LEAGUES)]:
+        part = [r for r in rows if r[league_idx] in leagues and r[0] not in second_no_score]
+        if not part and path != CLEAN_CSV:
+            continue
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(columns)
+            writer.writerows(part)
+        print(f"\nExported {len(part)} rows to {path}")
 
     conn.close()
 

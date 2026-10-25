@@ -11,6 +11,16 @@ DIVISIONS = {
     "E1": "Championship",
     "E2": "League One",
     "E3": "League Two",
+    # v3-eu-upper (European top divisions) - same football-data.co.uk format
+    "SP1": "La Liga",
+    "I1": "Serie A",
+    "D1": "Bundesliga",
+    "F1": "Ligue 1",
+    # their second divisions - history for promoted teams (not predicted live)
+    "SP2": "La Liga 2",
+    "I2": "Serie B",
+    "D2": "2. Bundesliga",
+    "F2": "Ligue 2",
 }
 
 
