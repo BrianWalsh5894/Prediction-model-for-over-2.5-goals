@@ -23,7 +23,7 @@
   "calibration_applied": false,
   "overall_test_metrics": {
     "log_loss": 0.6897242583767572,
-    "brier_score": 0.24827978937838593,
+    "brier_score": 0.2482797893783859,
     "roc_auc": 0.5528369731072874,
     "accuracy": 0.5324165029469549,
     "precision": 0.5343945423536101,
@@ -42,7 +42,7 @@
     "n_matches": 3955
   },
   "model_on_market_coverage_subset": {
-    "log_loss": 0.6903712624901647,
+    "log_loss": 0.6903712624901648,
     "brier_score": 0.24859976189007293,
     "roc_auc": 0.5492669197739835,
     "accuracy": 0.5304677623261694,
@@ -90,7 +90,7 @@
     },
     {
       "league_name": "League One",
-      "log_loss": 0.6864620510447781,
+      "log_loss": 0.6864620510447782,
       "brier_score": 0.24666656540055357,
       "roc_auc": 0.5895794766762509,
       "accuracy": 0.552536231884058,
@@ -112,8 +112,8 @@
     },
     {
       "league_name": "Premier League",
-      "log_loss": 0.6855223960340389,
-      "brier_score": 0.24616791145081005,
+      "log_loss": 0.6855223960340388,
+      "brier_score": 0.24616791145081002,
       "roc_auc": 0.53473158131177,
       "accuracy": 0.5618421052631579,
       "precision": 0.5660377358490566,
@@ -125,7 +125,7 @@
   "reliability_table": [
     {
       "bucket": "0.3-0.4",
-      "pred_mid": 0.3838945684652029,
+      "pred_mid": 0.383894568465203,
       "actual_rate": 0.4144144144144144,
       "n": 111
     },
@@ -218,7 +218,7 @@
     {
       "train_through": "2024/25",
       "predicts": "2025/26",
-      "log_loss": 0.6920984093044616,
+      "log_loss": 0.6920984093044618,
       "brier_score": 0.24945250761104343,
       "roc_auc": 0.5468474903474904,
       "accuracy": 0.5240667976424361,
