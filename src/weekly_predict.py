@@ -106,6 +106,8 @@ def main():
     ap.add_argument("--skip-refresh", action="store_true",
                     help="don't download results / re-run clean_data (testing only)")
     ap.add_argument("--today", help="pretend today is YYYY-MM-DD (testing only)")
+    ap.add_argument("--only-date", help="only predict fixtures on this date (YYYY-MM-DD) - use with --force "
+                                        "when the last Saturday's results aren't published yet")
     ap.add_argument("--force", action="store_true",
                     help="predict even if last Saturday's results aren't in (only if there were no games)")
     args = ap.parse_args()
@@ -138,6 +140,17 @@ def main():
         sys.exit(1)
     if len(fixtures):
         fixtures = fixtures[~fixtures["match_id"].isin(clean["match_id"])]   # already played
+    if len(fixtures) and args.only_date:
+        fixtures = fixtures[fixtures["match_date"] == pd.Timestamp(args.only_date)]
+    if len(fixtures):
+        # Never predict a match that has already kicked off (fixtures.csv times are UK time)
+        now = datetime.now()
+        ko = pd.to_datetime(fixtures["match_date"].dt.strftime("%Y-%m-%d") + " "
+                            + fixtures["kickoff_time"].fillna("23:59").astype(str), errors="coerce")
+        started = ko.notna() & (ko <= now) & (fixtures["match_date"].dt.date == now.date())
+        if started.any():
+            print(f"\n{int(started.sum())} fixture(s) skipped - already kicked off.")
+        fixtures = fixtures[~started]
     if fixtures.empty:
         print(f"\nNo upcoming {' / '.join(leagues)} fixtures found from {today}.")
         return

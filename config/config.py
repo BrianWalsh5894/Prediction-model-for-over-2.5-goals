@@ -38,8 +38,8 @@ LEAGUE_GROUPS = {
     },
     "upper": {
         "leagues": ["Premier League", "Championship"],
-        "features": "base+xg",            # step 4 R&D - not live yet
-        "live_model": None,
+        "features": "base",               # xG (step 4) didn't beat the market - not used live
+        "live_model": "v3",               # same frozen v3, separate track record (from 25 Oct 2026)
     },
 }
 LIVE_LEAGUES = LEAGUE_GROUPS["lower"]["leagues"]   # kept: recorded in manifest_v3.json
