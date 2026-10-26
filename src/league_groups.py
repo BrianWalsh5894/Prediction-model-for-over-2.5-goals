@@ -18,6 +18,7 @@ import config  # noqa: E402
 
 MODEL_MODULES = {
     "v3": "model_v3",
+    "v3-eu-upper": "model_v3_eu_upper",
 }
 
 

@@ -41,5 +41,10 @@ LEAGUE_GROUPS = {
         "features": "base",               # xG (step 4) didn't beat the market - not used live
         "live_model": "v3",               # same frozen v3, separate track record (from 25 Oct 2026)
     },
+    "eu_upper": {
+        "leagues": ["La Liga", "Serie A", "Bundesliga", "Ligue 1"],
+        "features": "base (top + 2nd division history) + Understat xG",
+        "live_model": "v3-eu-upper",      # experiment - did not pass the +0.002 bar (rd_eu_upper2/3)
+    },
 }
 LIVE_LEAGUES = LEAGUE_GROUPS["lower"]["leagues"]   # kept: recorded in manifest_v3.json

@@ -19,6 +19,8 @@ What it does, in order:
 Run from inside src/:
     python weekly_predict.py                     (default group: lower = League One + Two)
     python weekly_predict.py --group lower
+    python weekly_predict.py --group upper       (Premier League + Championship)
+    python weekly_predict.py --group eu_upper    (La Liga, Serie A, Bundesliga, Ligue 1)
     python weekly_predict.py --fixtures-file path\\to\\fixtures.csv   (if the download fails)
 League groups and their live models are set in config/config.py (LEAGUE_GROUPS).
 """
@@ -113,17 +115,19 @@ def main():
     args = ap.parse_args()
 
     today = date.fromisoformat(args.today) if args.today else date.today()
-    if not args.skip_refresh:
-        refresh_results()
-
     leagues = league_groups.group(args.group)["leagues"]
     mv = league_groups.live_model(args.group)
+    if not args.skip_refresh:
+        refresh_results()
+        if hasattr(mv, "refresh_data"):        # e.g. latest Understat xG for v3-eu-upper
+            print("\nRefreshing extra data for this model...")
+            mv.refresh_data()
     print(f"Group '{args.group}': {', '.join(leagues)} - live model {mv.MODEL_VERSION}")
     conn = live_db.connect()
     bundle = mv.load_bundle()
 
     fixtures = load_fixtures(args.fixtures_file, conn, today, leagues)
-    clean = pd.read_csv(CLEAN_CSV, parse_dates=["match_date"])
+    clean = pd.read_csv(getattr(mv, "CLEAN_CSV", CLEAN_CSV), parse_dates=["match_date"])
 
     # Guard: the most recent Saturday's results must already be in the
     # database, otherwise a team's prediction would miss its last match.
