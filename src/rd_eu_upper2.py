@@ -94,8 +94,9 @@ def md_table(df, float_fmt="{:.4f}"):
     return "\n".join([header, sep] + ["| " + " | ".join(r) + " |" for r in df.itertuples(index=False, name=None)])
 
 
-def main():
-    rng = np.random.default_rng(SEED)
+def build_predictions():
+    """Walk-forward predictions for candidates A-E (one row per top-division
+    test match), plus market prices. Also used by rd_eu_upper3.py."""
     clean = pd.read_csv(CLEAN_CSV, parse_dates=["match_date"])
     clean = clean[clean["season"].isin(ALL_SEASONS)]
     goals_df = clean[["match_id", "home_goals", "away_goals"]]
@@ -161,9 +162,16 @@ def main():
         out[E] = 0.5 * pE_pois + 0.5 * dc.fillna(pE_pois)
         out["Bookmaker average"] = demargin(te["avg_over_2_5"], te["avg_under_2_5"]).values
         out["Betfair close"] = demargin(te["bfe_close_over_2_5"], te["bfe_close_under_2_5"]).values
+        for col in ["bfe_over_2_5", "bfe_under_2_5", "bfe_close_over_2_5", "bfe_close_under_2_5"]:
+            out[col] = te[col].values
         preds.append(out.reset_index())
         print(f"  predicted {season}")
-    P = pd.concat(preds, ignore_index=True)
+    return pd.concat(preds, ignore_index=True)
+
+
+def main():
+    rng = np.random.default_rng(SEED)
+    P = build_predictions()
 
     summary = []
     for league in ["ALL"] + TOP:
