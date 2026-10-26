@@ -14,6 +14,12 @@ of the frozen model v3.
          same matches
        - bets: P/L, ROI with a 95% bootstrap interval, closing-line value
          (did you get better odds than the close?)
+       - closing-line value per bet: your odds vs the close, and the bet's
+         value if Betfair's closing price is the truth ("value at close",
+         after commission, margin removed)
+       - market movement: for EVERY played prediction you priced (bet or
+         not), did Betfair's price move towards the model's view between
+         your price and the close? Shows up long before profit does.
      Written to reports/live_tracking_<group>.md (one per live league group) and printed.
 
 Run from inside src/ (after the weekend's matches):
@@ -49,6 +55,50 @@ def mean_ll(y, p):
 
 def demargin(o, u):
     return (1 / o) / (1 / o + 1 / u)
+
+
+def boot_ci(values, rng, n_boot=5000):
+    v = np.asarray(values, dtype=float)
+    means = [v[rng.integers(0, len(v), len(v))].mean() for _ in range(n_boot)]
+    return np.percentile(means, 2.5), np.percentile(means, 97.5)
+
+
+def add_clv(bets):
+    """Per bet: close_odds (Betfair close on your side), clv = your odds vs the
+    close (raw), value_at_close = the bet's EV after commission if Betfair's
+    closing price (margin removed) is the true probability."""
+    b = bets.copy()
+    over = b["bet_side"] == "over"
+    b["close_odds"] = np.where(over, b["close_over"], b["close_under"])
+    p_over_close = demargin(b["close_over"], b["close_under"])
+    p_side = np.where(over, p_over_close, 1 - p_over_close)
+    b["clv"] = b["odds_taken"] / b["close_odds"] - 1
+    b["value_at_close"] = p_side * (b["odds_taken"] - 1) * (1 - b["commission"]) - (1 - p_side)
+    return b
+
+
+def market_movement(done, rng):
+    """For played predictions with both your price and the close: did the
+    market move towards the model? Positive = towards the model."""
+    m = done[done[["over_odds", "under_odds", "close_over", "close_under"]].notna().all(axis=1)].copy()
+    if m.empty:
+        return None, m
+    m["p_yours"] = demargin(m["over_odds"], m["under_odds"])
+    m["p_close"] = demargin(m["close_over"], m["close_under"])
+    direction = np.sign(m["p_model"] - m["p_yours"])
+    m["move_to_model_pp"] = direction * (m["p_close"] - m["p_yours"]) * 100
+    n = len(m)
+    out = {"priced_and_played": n,
+           "moved_towards_model": f"{(m['move_to_model_pp'] > 0).mean():.0%}",
+           "moved_away": f"{(m['move_to_model_pp'] < 0).mean():.0%}",
+           "no_move": f"{(m['move_to_model_pp'] == 0).mean():.0%}",
+           "avg_move_towards_model_pp": f"{m['move_to_model_pp'].mean():+.2f}"}
+    if n >= MIN_BETS_FOR_CI:
+        lo, hi = boot_ci(m["move_to_model_pp"].values, rng)
+        out["avg_move_95pct_interval"] = f"{lo:+.2f} to {hi:+.2f}"
+    else:
+        out["avg_move_95pct_interval"] = f"needs {MIN_BETS_FOR_CI}+ matches"
+    return out, m
 
 
 def md_table(df):
@@ -142,6 +192,17 @@ def build_report(conn, group_name):
     lines.append("## Are the probabilities better than the market? (lower log loss = better)\n")
     lines.append(md_table(quality) + "\n")
 
+    # --- Market movement: did Betfair move towards the model? -----------------
+    movement, _ = market_movement(done, rng)
+    lines.append("\n## Did the market move towards the model? (all priced predictions, bet or not)\n")
+    lines.append("Between the price you recorded and Betfair's close. `avg_move_towards_model_pp` is in "
+                 "percentage points of P(Over); positive = the market moved the model's way. A real edge "
+                 "shows up here as a positive average with the interval above zero.\n")
+    if movement is None:
+        lines.append("No played matches with both your price and the Betfair close yet.\n")
+    else:
+        lines.append(md_table(pd.DataFrame([movement]).T.reset_index().set_axis(["metric", "value"], axis=1)) + "\n")
+
     # --- Bets --------------------------------------------------------------------
     bets = pd.read_sql_query("""
         SELECT b.*, f.league_name, f.home_team, f.away_team, f.match_date,
@@ -160,9 +221,10 @@ def build_report(conn, group_name):
         n = len(settled)
         pl = settled["profit_loss"].values
         roi = pl.sum() / settled["stake"].sum()
-        settled["close_odds"] = np.where(settled["bet_side"] == "over", settled["close_over"], settled["close_under"])
+        settled = add_clv(settled)
         has_close = settled["close_odds"].notna()
-        clv = (settled.loc[has_close, "odds_taken"] / settled.loc[has_close, "close_odds"] - 1)
+        clv = settled.loc[has_close, "clv"]
+        value_at_close = settled.loc[has_close, "value_at_close"]
         summary = {
             "settled_bets": n,
             "pending": int((bets["result"] == "pending").sum()),
@@ -186,6 +248,12 @@ def build_report(conn, group_name):
         if has_close.any():
             summary["avg_closing_line_value"] = f"{clv.mean():+.1%} ({has_close.sum()} bets)"
             summary["bets_beating_close"] = f"{(clv > 0).mean():.0%}"
+            summary["avg_value_at_close"] = f"{value_at_close.mean():+.1%}"
+            if has_close.sum() >= MIN_BETS_FOR_CI:
+                lo, hi = boot_ci(value_at_close.values, rng)
+                summary["value_at_close_95pct_interval"] = f"{lo:+.1%} to {hi:+.1%}"
+            else:
+                summary["value_at_close_95pct_interval"] = f"needs {MIN_BETS_FOR_CI}+ bets with a close"
         lines.append(md_table(pd.DataFrame([summary]).T.reset_index().set_axis(["metric", "value"], axis=1)) + "\n")
 
         by_league = settled.groupby("league_name").agg(
@@ -195,10 +263,13 @@ def build_report(conn, group_name):
         lines.append("\n### By league\n")
         lines.append(md_table(by_league.drop(columns="staked")) + "\n")
 
-        recent = bets.sort_values("bet_date", ascending=False).head(20)
+        recent = add_clv(bets.sort_values("bet_date", ascending=False).head(20))
         recent = recent[["match_date", "league_name", "home_team", "away_team", "bet_side",
-                         "odds_taken", "expected_value", "result", "profit_loss"]].copy()
-        recent["expected_value"] = recent["expected_value"].map(lambda v: f"{v:+.1%}")
+                         "odds_taken", "close_odds", "clv", "value_at_close", "expected_value",
+                         "result", "profit_loss"]].copy()
+        for c in ["expected_value", "clv", "value_at_close"]:
+            recent[c] = recent[c].map(lambda v: f"{v:+.1%}" if pd.notna(v) else "")
+        recent["profit_loss"] = recent["profit_loss"].round(2)
         lines.append("\n### Last 20 bets\n")
         lines.append(md_table(recent) + "\n")
 
@@ -207,7 +278,7 @@ def build_report(conn, group_name):
     report_md = os.path.join(REPORT_DIR, f"live_tracking_{group_name}.md")
     with open(report_md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    return quality, summary, report_md
+    return quality, summary, movement, report_md
 
 
 def main():
@@ -228,11 +299,15 @@ def main():
 
     pd.set_option("display.width", 200)
     for group_name in league_groups.live_groups():
-        quality, summary, report_md = build_report(conn, group_name)
+        quality, summary, movement, report_md = build_report(conn, group_name)
         grp = league_groups.group(group_name)
         print(f"\n===== Group '{group_name}' ({', '.join(grp['leagues'])}), model {grp['live_model']} =====")
         print("Probability quality (lower log loss = better):")
         print(quality.to_string(index=False))
+        if movement:
+            print("\nDid the market move towards the model? (your price -> Betfair close, all priced matches):")
+            for k, v in movement.items():
+                print(f"  {k}: {v}")
         if summary:
             print("\nPaper bets:")
             for k, v in summary.items():

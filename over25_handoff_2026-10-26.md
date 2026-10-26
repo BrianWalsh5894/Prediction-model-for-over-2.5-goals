@@ -37,6 +37,7 @@ python weekly_predict.py [--group lower|upper|eu_upper]   # stores predictions, 
 # fill betfair_over_odds, betfair_under_odds (blue BACK prices), checked_at (2026-10-31 14:05) -> save, close Excel
 python weekly_bets.py ..\data\live\odds_entry_<group>_<date>.csv   # records prices, logs paper bets (EV >= 3% after 2% commission, 1 unit flat)
 python weekly_settle.py        # after matches: settles bets, voids postponed (7 days), writes reports\live_tracking_<group>.md + reports\live_tracking.xlsx
+                               # also reports closing-line value per bet (odds vs close, 'value at close') and whether Betfair moved towards the model (all priced matches)
 python export_tracking_xlsx.py # refresh the spreadsheet on its own
 ```
 - It predicts each team's NEXT match only. The first prediction and first price per match are kept forever.
@@ -101,6 +102,8 @@ No-bet predictions logged on 25 Oct: Crystal Palace v Newcastle, Hull v Brentfor
 
 ## 9. Open items / ideas
 - Tuesday: `weekly_settle.py` → first live numbers.
+- `weekly_settle.py` updated 26 Oct (15,732 bytes): adds per-bet close odds, CLV and value at close (margin removed, after commission), plus a 'did the market move towards the model?' check over every priced match. Tested on a copy of the DB with fake results. Commit it.
+- Agreed 26 Oct: keep paper tracking. Watch closing-line value / market movement first (meaningful after about 50 priced matches per group); profit needs 200+ bets. Brian prefers to stay on the Betfair exchange (no bookmaker price-shopping).
 - Commit the v3-eu-upper freeze if not done yet (config, league_groups, weekly_predict, model_v3_eu_upper, freeze_model_v3_eu_upper, models/manifest_v3_eu_upper.json, cheatsheet).
 - Small fix: `weekly_bets.py` says "no price cleared EV" when re-run on an already-recorded sheet. It should say "nothing new recorded".
 - Commit `src/rd_eu_upper_second.py` and `src/rd_eu_upper_second2.py` plus their reports in `reports/`.
