@@ -81,6 +81,12 @@ No-bet predictions logged on 25 Oct: Crystal Palace v Newcastle, Hull v Brentfor
 - The test seasons 2024/25–2025/26 have now been used once for this group; further tuning against them would flatter the model.
 - Not frozen, not tracked.
 
+**National League (Conference) R&D round 1 (28 Oct, `rd_conference.py`, verified)** - see `claude/over25_conference_plan_2026-10-28.txt`.
+- football-data's EC file has no shots before 2026/27, so goals-only v3 recipe (52 features + Dixon-Coles), v3 settings untuned. Betfair O/U from 2024/25.
+- Best C (Poisson + DC both on League Two + NL): **+0.0030 vs bookmaker average, +0.0061 vs Betfair close** (both CIs include 0; only 1,087 test matches). Fails the +0.002 bar.
+- Betting: −6.4% early / −2.4% close. Established-team matches only +0.0008; relegated-from-L2 +0.0115; promoted from N/S +0.0042. Under-predicts Overs as scoring rises.
+- Round 2 candidates: level adjustment for teams changing division; scoring-trend fix; usual tuning grid on 2020/21–2023/24.
+
 **Side research: Bzzoiro Sports Data API (26 Oct)** - see `claude/bzzoiro-side-research-2026-10-26.md` (Project) / `scratch\` (PC). League Two xG and line-ups are excellent quality but add no edge; the market already prices team news.
 
 **Bottom line:** with free public stats, no model beats the market. England is roughly break-even; Europe loses about 4%; the European second divisions are no softer (worse than the top 4). The gap is information the market has (line-ups, injuries, late money), not more of the same features.
@@ -98,7 +104,7 @@ No-bet predictions logged on 25 Oct: Crystal Palace v Newcastle, Hull v Brentfor
 - **Data pipeline:** `download_data.py`, `import_data.py`, `import_helpers.py` (DIVISIONS incl. SP1/I1/D1/F1 + SP2/I2/D2/F2), `update_current_season.py`, `clean_data.py` (exports England → `matches_clean.csv`, Europe → `matches_clean_eu_upper.csv`), `build_features.py` (`build_feature_table`), `build_features_eu_upper.py`, `download_eu_upper.py`, `download_understat.py` (all 5 leagues → `match_xg` table).
 - **Models:** `model_v3.py`, `freeze_model_v3.py`, `model_v3_eu_upper.py`, `freeze_model_v3_eu_upper.py`, `league_groups.py`.
 - **Live:** `weekly_predict.py`, `weekly_bets.py`, `weekly_settle.py`, `live_db.py` (tables: `live_fixtures`, `live_prices`, `predictions` + components, `bets`), `export_tracking_xlsx.py`.
-- **R&D:** `rd_experiments.py`–`rd_experiments4.py`, `league_breakdown.py`, `rd_xg_upper.py`, `rd_eu_upper.py`, `rd_eu_upper2.py` (has `build_predictions()`), `rd_eu_upper3.py`, `rd_eu_upper_second.py`, `rd_eu_upper_second2.py`, `test_evaluation.py`. Side research scripts and data (Bzzoiro) are in `scratch\` (not in git). Reports are in `reports/`.
+- **R&D:** `rd_experiments.py`–`rd_experiments4.py`, `league_breakdown.py`, `rd_xg_upper.py`, `rd_eu_upper.py`, `rd_eu_upper2.py` (has `build_predictions()`), `rd_eu_upper3.py`, `rd_eu_upper_second.py`, `rd_eu_upper_second2.py`, `check_conference_data.py`, `rd_conference.py`, `test_evaluation.py`; `manual_settle.py` settles bets from a typed results file when football-data is late. Side research scripts and data (Bzzoiro) are in `scratch\` (not in git). Reports are in `reports/`.
 
 ## 9. Open items / ideas
 - Tuesday: `weekly_settle.py` → first live numbers.
