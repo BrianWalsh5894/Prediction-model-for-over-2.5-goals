@@ -46,5 +46,11 @@ LEAGUE_GROUPS = {
         "features": "base (top + 2nd division history) + Understat xG",
         "live_model": "v3-eu-upper",      # experiment - did not pass the +0.002 bar (rd_eu_upper2/3)
     },
+    "conference": {
+        "leagues": ["National League"],
+        "features": "goals-based + shots on target + Bzzoiro xG (rd_conference3 C+SOT+xG)",
+        "live_model": "v3-conf",          # experiment - did not pass the +0.002 bar (rd_conference3);
+                                          # predicted with predict_conference.py, not weekly_predict.py
+    },
 }
 LIVE_LEAGUES = LEAGUE_GROUPS["lower"]["leagues"]   # kept: recorded in manifest_v3.json

@@ -33,6 +33,9 @@ def live_model(name):
     version = group(name)["live_model"]
     if version is None:
         raise SystemExit(f"Group '{name}' has no frozen live model yet (still in R&D).")
+    if version not in MODEL_MODULES:
+        raise SystemExit(f"Group '{name}' (model {version}) is predicted with its own script: "
+                         f"python predict_conference.py <fixtures csv>")
     return importlib.import_module(MODEL_MODULES[version])
 
 

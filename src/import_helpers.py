@@ -21,6 +21,9 @@ DIVISIONS = {
     "I2": "Serie B",
     "D2": "2. Bundesliga",
     "F2": "Ligue 2",
+    # National League - tracked live only (v3-conf experiment, own group); never
+    # exported into any model's training data by clean_data.py
+    "EC": "National League",
 }
 
 

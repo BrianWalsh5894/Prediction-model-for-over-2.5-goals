@@ -26,9 +26,11 @@ A local machine-learning system (Python, SQLite, Anaconda env `over25`) that pre
 | `lower` (default) | League One, League Two | **v3** | ca435d362d0a3369 | 25 Oct 2026 |
 | `upper` | Premier League, Championship | **v3** (same model, separate record) | same | tracked from 25 Oct |
 | `eu_upper` | La Liga, Serie A, Bundesliga, Ligue 1 | **v3-eu-upper** | 1aebf944ffe7cec7 | 26 Oct 2026 |
+| `conference` | National League | **v3-conf** (experiment) | 2d338220ffe04fba | 28 Oct 2026 |
 
 - **v3** = 50/50 blend of Poisson regression (103 features, alpha 1.3335, trained 2017/18–2025/26, 18,060 matches) and Dixon-Coles team ratings (re-fitted weekly on the last 3 years, rho correction, no time decay). Walk-forward log loss 0.6860.
 - **v3-eu-upper** = the same recipe plus second-division history (La Liga 2, Serie B, 2. Bundesliga, Ligue 2) for promoted teams, plus 23 Understat xG features, with Dixon-Coles per country. Walk-forward 0.6762. It **failed** the pre-set +0.002 bar, so it's tracked as an experiment.
+- **v3-conf** = goals-based v3 features + shots on target + rolling xG (Bzzoiro), Poisson on League Two + NL 2017/18–2025/26, DC on L2+NL. +0.0042 vs Betfair close in R&D (fails bar) → experiment. Predict with `python predict_conference.py <fixtures csv>` (not weekly_predict): refreshes EC_2627.csv, logs to `data/live/conference_log.csv`, stores predictions in the DB (group `conference`) and writes `odds_entry_conference_<date>.csv` → then `weekly_bets.py` / `weekly_settle.py` / spreadsheet as normal. National League (EC) is now in `DIVISIONS`, so `update_current_season.py` imports its results + Betfair close; `clean_data.py` lists it as TRACKED_ONLY (never exported into any training file - England export verified byte-identical). Refresh Bzzoiro NL stats before each NL round.
 - Config: `config/config.py` → `LEAGUE_GROUPS`. Registry: `src/league_groups.py` (`MODEL_MODULES`). A new model = new version + new record. A tracked model never changes.
 
 ## 4. Weekly routine (also in `over25_cheatsheet.txt`)

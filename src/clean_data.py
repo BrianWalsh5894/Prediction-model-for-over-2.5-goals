@@ -33,6 +33,9 @@ EU_UPPER_LEAGUES = ["La Liga", "Serie A", "Bundesliga", "Ligue 1"]
 # Second divisions: history only (promoted teams), exported with the EU file.
 # Their match counts vary with league size changes, so they're reported, not enforced.
 EU_SECOND_LEAGUES = ["La Liga 2", "Serie B", "2. Bundesliga", "Ligue 2"]
+# Tracked live only (v3-conf reads its own files): imported so weekly_settle can
+# settle bets and get Betfair closing odds. Never exported, counts not enforced.
+TRACKED_ONLY_LEAGUES = ["National League"]
 
 EXPECTED_MATCHES = {
     "Premier League": 380,
@@ -91,7 +94,8 @@ def main():
     cur.execute("SELECT league_name FROM leagues")
     present = {r[0] for r in cur.fetchall()}
     missing = [lg for lg in ENGLISH_LEAGUES if lg not in present]
-    unknown = sorted(present - set(ENGLISH_LEAGUES) - set(EU_UPPER_LEAGUES) - set(EU_SECOND_LEAGUES))
+    unknown = sorted(present - set(ENGLISH_LEAGUES) - set(EU_UPPER_LEAGUES) - set(EU_SECOND_LEAGUES)
+                     - set(TRACKED_ONLY_LEAGUES))
     if missing or unknown:
         ok = fail(f"leagues table: missing {missing}, unexpected {unknown}")
     else:
@@ -171,7 +175,7 @@ def main():
     unexplained = []
     second_counts = []
     for league_name, season, count in cur.fetchall():
-        if league_name in EU_SECOND_LEAGUES:
+        if league_name in EU_SECOND_LEAGUES or league_name in TRACKED_ONLY_LEAGUES:
             second_counts.append(f"{league_name} {season}: {count}")
             continue
         expected = EXPECTED_BY_SEASON.get((league_name, season), EXPECTED_MATCHES[league_name])
