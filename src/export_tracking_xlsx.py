@@ -34,17 +34,23 @@ FONT = "Arial"
 
 
 def load(conn):
+    # scores typed in by manual_settle.py (used until football-data publishes them)
+    conn.execute("""CREATE TABLE IF NOT EXISTS manual_results (
+                        match_id TEXT PRIMARY KEY, home_goals INTEGER NOT NULL, away_goals INTEGER NOT NULL,
+                        entered_at TEXT NOT NULL)""")
     bets = pd.read_sql_query("""
         SELECT b.bet_id, f.match_date, f.kickoff_time, f.league_name, f.home_team, f.away_team,
                b.bet_side, b.odds_taken, p.predicted_prob_over_2_5 AS p_over, b.expected_value,
                b.stake, b.commission, b.result, b.profit_loss, b.bet_date AS checked_at,
                o.bfe_close_over_2_5 AS close_over, o.bfe_close_under_2_5 AS close_under,
-               m.home_goals, m.away_goals
+               COALESCE(m.home_goals, mr.home_goals) AS home_goals,
+               COALESCE(m.away_goals, mr.away_goals) AS away_goals
         FROM bets b
         JOIN live_fixtures f ON f.match_id = b.match_id
         LEFT JOIN predictions p ON p.prediction_id = b.prediction_id
         LEFT JOIN odds o ON o.match_id = b.match_id
         LEFT JOIN matches m ON m.match_id = b.match_id
+        LEFT JOIN manual_results mr ON mr.match_id = b.match_id
         ORDER BY f.match_date, f.kickoff_time, b.bet_id
     """, conn)
     preds = pd.read_sql_query("""
@@ -52,12 +58,16 @@ def load(conn):
                p.model_version, p.predicted_prob_over_2_5 AS p_over,
                lp.over_odds, lp.under_odds, lp.checked_at,
                o.bfe_close_over_2_5 AS close_over, o.bfe_close_under_2_5 AS close_under,
-               m.home_goals, m.away_goals, m.over_2_5
+               COALESCE(m.home_goals, mr.home_goals) AS home_goals,
+               COALESCE(m.away_goals, mr.away_goals) AS away_goals,
+               COALESCE(m.over_2_5, CASE WHEN mr.match_id IS NULL THEN NULL
+                                         ELSE (mr.home_goals + mr.away_goals > 2) END) AS over_2_5
         FROM predictions p
         JOIN live_fixtures f ON f.match_id = p.match_id
         LEFT JOIN live_prices lp ON lp.match_id = p.match_id
         LEFT JOIN odds o ON o.match_id = p.match_id
         LEFT JOIN matches m ON m.match_id = p.match_id
+        LEFT JOIN manual_results mr ON mr.match_id = p.match_id
         ORDER BY f.match_date, f.kickoff_time, f.home_team
     """, conn)
     return bets, preds

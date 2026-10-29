@@ -4,7 +4,9 @@ Manual settle - for when football-data.co.uk hasn't published results yet.
 Settles PENDING paper bets from a small results file you (or Claude) write,
 using the same win/loss maths as weekly_settle.py. It does NOT touch the
 matches table (the data the model learns from), so no half-complete rows
-get in there.
+get in there. The scores go in a separate manual_results table (shown in
+the spreadsheet) and the fixtures are marked played. Safe to re-run: bets
+already settled are left alone.
 
 When football-data later publishes these matches, run weekly_settle.py as
 normal: it fills in the scores, Betfair closing odds, log loss and the
@@ -44,10 +46,19 @@ def main():
         sys.exit(1)
 
     now = datetime.now().isoformat(timespec="seconds") + " (manual)"
+    conn.execute("""CREATE TABLE IF NOT EXISTS manual_results (
+                        match_id TEXT PRIMARY KEY, home_goals INTEGER NOT NULL, away_goals INTEGER NOT NULL,
+                        entered_at TEXT NOT NULL)""")
     total, rows = 0.0, []
     for r in res.itertuples(index=False):
         goals = int(r.home_goals) + int(r.away_goals)
         over = goals > 2
+        # keep the score (shown in the spreadsheet until football-data publishes it) and mark
+        # the fixture played, so weekly_settle never voids it as "no result after 7 days"
+        conn.execute("INSERT OR REPLACE INTO manual_results VALUES (?, ?, ?, ?)",
+                     (r.match_id, int(r.home_goals), int(r.away_goals), now))
+        conn.execute("UPDATE live_fixtures SET status = 'played' WHERE match_id = ? AND status = 'scheduled'",
+                     (r.match_id,))
         bets = conn.execute("""SELECT bet_id, stake, odds_taken, bet_side, commission FROM bets
                                WHERE match_id = ? AND result = 'pending'""", (r.match_id,)).fetchall()
         for bet_id, stake, odds, side, comm in bets:
